@@ -34,13 +34,13 @@ function getDNSByFile {
     if ($DNS) {
         $domainPattern = '^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$'
         $ipv4Pattern = '^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+        
         if ($DNS -match $domainPattern) {
             $DnsIPAddress = getDnsIp -domain $DNS -DnsServer "114.114.114.114"
             if ($DnsIPAddress -ne "failed") {
                 return $DnsIPAddress
             }
-        }
-        elseif ($DNS -match $ipv4Pattern) {
+        } elseif ($DNS -match $ipv4Pattern) {
             return $DNS
         }
         return "114.114.114.114"
@@ -52,8 +52,7 @@ function getDNSByFile {
     }
 }
 
-# 获取dns解析的ip
-function getDnsIp() {
+function getDnsIp {
     param (
         [string]$domain,
         [string]$DnsServer
@@ -63,8 +62,7 @@ function getDnsIp() {
     $ip = "failed"
     if ($result) {
         $ip = $result[0].IPAddress
-    }
-    else {
+    } else {
         $result = Resolve-DnsName $domain -Server "114.114.114.114" -Type A -DnsOnly -QuickTimeout
         if ($result) {
             $ip = $result[0].IPAddress
@@ -80,15 +78,14 @@ function Start-WireguardTunnel {
         [string]$EndpointIp
     )
     $serviceName = "WireGuard Tunnel: $TunnelName";
-    $ExistsService = Get-Service $serviceName;
+    $ExistsService = Get-Service $serviceName -ErrorAction SilentlyContinue
     if ($ExistsService) {
         Write-Host "stop wireguard"
         Invoke-Expression "wireguard /uninstalltunnelservice $TunnelName"
     }
     Write-Host "start wireguard"
     Start-Sleep -Seconds 3
-    # 生成临时配置文件
-    $WireguardConfigFilePathTemp = $WireguardConfigFilePath.Substring(0, $WireguardConfigFilePath.Length - $TunnelName.Length - 1) + "\" + "$TunnelName" + ".conf"
+    $WireguardConfigFilePathTemp = "$($WireguardConfigFilePath.Substring(0, $WireguardConfigFilePath.Length - $TunnelName.Length - 1))\$TunnelName.conf"
     if (-not(Test-Path $WireguardConfigFilePathTemp -PathType Leaf)) {
         New-Item -ItemType File -Path $WireguardConfigFilePathTemp 
         Set-ItemProperty -Path $WireguardConfigFilePathTemp -Name Attributes -Value ([System.IO.FileAttributes]::Hidden)
@@ -100,8 +97,7 @@ function Start-WireguardTunnel {
     Invoke-Expression "wireguard /installtunnelservice $WireguardConfigFilePathTemp"
 }
 
-# 停止WireGuard服务
-function Stop-WireGuardServic {
+function Stop-WireGuardService {
     param (
         [string]$TunnelName
     )
@@ -121,29 +117,27 @@ $EndpointIPAddress = getDnsIp -domain $Endpoint -DnsServer $DnsServer
 $DnsIPAddress = $EndpointIPAddress
 # getDnsIp 失败次数
 $DnsFailedCount = 0
-# 初始化隧道
+
 Start-WireguardTunnel -TunnelName $TunnelName -EndpointIp $DnsIPAddress
-# 主程序
+
 while ($true) {
     $DnsIPAddress = getDnsIp -domain $Endpoint -DnsServer $DnsServer
     Write-Host "DnsIPAddress: $DnsIPAddress, EndpointIPAddress: $EndpointIPAddress, DnsServer: $DnsServer"
     if ($DnsIPAddress -eq "failed") {
-        $DnsFailedCount = $DnsFailedCount + 1
+        $DnsFailedCount++
         if ($DnsFailedCount -eq 3) {
-            Stop-WireGuardServic -TunnelName $TunnelName
+            Stop-WireGuardService -TunnelName $TunnelName
             $DnsServer = getDNSByFile -path $WireguardConfigFilePath
             $DnsFailedCount = 1
         }
-    }
-    else {
+    } else {
         $DnsFailedCount = 1
         if ($EndpointIPAddress -ne $DnsIPAddress) {
             Start-WireguardTunnel -TunnelName $TunnelName -EndpointIp $DnsIPAddress
             $EndpointIPAddress = $DnsIPAddress
-        }
-        else {
+        } else {
             $serviceName = "WireGuard Tunnel: $TunnelName";
-            $ExistsService = Get-Service $serviceName;
+            $ExistsService = Get-Service $serviceName -ErrorAction SilentlyContinue
             if (!$ExistsService) {
                 Start-WireguardTunnel -TunnelName $TunnelName -EndpointIp $DnsIPAddress
             }
